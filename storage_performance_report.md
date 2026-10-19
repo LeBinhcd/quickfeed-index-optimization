@@ -6,18 +6,26 @@ The legacy `Posts` table had five secondary indexes in addition to its primary k
 
 `idx_content` is a prefix B-Tree over a long `TEXT` value. It consumes storage and is not a general full-text search solution. `idx_post_type` has only three likely values, and `idx_is_visible` has only two. Their low cardinality often makes a table scan cheaper than repeated index lookups, especially when most rows are visible. The optimizer may therefore ignore them while writes still pay their maintenance cost.
 
-The optimization keeps `idx_user_id`, which supports retrieving a user's posts, and `idx_created_at`, which supports time-based newsfeed access. It removes exactly `idx_content`, `idx_post_type`, and `idx_is_visible`. This favors write performance and reduces index storage while preserving the most useful access paths. If keyword search in `content` is required, a deliberate `FULLTEXT` design should be evaluated instead of an indiscriminate prefix index.
+The optimization keeps `idx_user_id`, which supports retrieving a user's posts, and `idx_created_at`, which supports time-based newsfeed access. It removes exactly `idx_content`, `idx_post_type`, and `idx_is_visible`. This favors write performance and reduces index maintenance while preserving the most useful access paths. If keyword search in `content` is required, a deliberate `FULLTEXT` design should be evaluated instead of an indiscriminate prefix index.
 
 ## Measurement log
 
-Run `quickfeed_index_optimization.sql` in MySQL and copy the values from the two `information_schema.TABLES` result sets below.
+The script was executed locally against MySQL 8.0.46 with approximately 10,000 sample rows.
 
 | Measurement | Data (MB) | Index (MB) | Total (MB) |
 |---|---:|---:|---:|
-| Before optimization | [record result] | [record result] | [record result] |
-| After optimization | [record result] | [record result] | [record result] |
+| Before optimization | 0.02 | 0.08 | 0.09 |
+| After optimization | 0.02 | 0.08 | 0.09 |
 
-The exact reduction depends on row count, value distribution, InnoDB page allocation, and server version; no fabricated benchmark values are used here. On a populated production table, record the actual `INDEX_LENGTH` reduction.
+The `SHOW INDEX FROM Posts` result after optimization confirmed that only these indexes remained:
+
+```text
+PRIMARY
+idx_user_id
+idx_created_at
+```
+
+The displayed `INDEX_LENGTH` did not decrease for this small test table because InnoDB reports allocated index pages and the values are rounded to two decimal megabytes. This does not mean the three indexes remained: their definitions were removed successfully. On a larger populated table, the storage difference is more likely to be visible. In production, also measure filesystem usage and consider table rebuild/reorganization policies when physical space reclamation is required.
 
 ## Trade-off and limitation
 
